@@ -1,0 +1,138 @@
+Étape 1 — Chasse au trésor
+1. Configuration du serveur SSH
+Commande : ls /etc/ssh
+
+La configuration du serveur SSH se trouve dans /etc/ssh/sshd_config. Un dossier de compléments existe également : /etc/ssh/sshd_config.d/, contenant notamment 50-cloud-init.conf.
+
+2. Journal des tentatives de connexion
+Commande : sudo grep -iE "accepted|failed|invalid user" /var/log/auth.log
+
+Nous avons repéré une tentative de vérification de mot de passe échouée pour l’utilisateur admin1. Le fichier utilisé est /var/log/auth.log.
+
+3. Version du noyau
+Commande : cat /proc/version
+
+Le noyau utilisé est Linux 7.0.0-30-generic, en architecture x86_64.
+
+4. Nombre de processeurs et mémoire
+Commandes :
+
+grep -c processor /proc/cpuinfo
+grep MemTotal /proc/meminfo
+Le système voit 2 processeurs et possède une mémoire totale de 1681980 kB.
+
+5. Fichiers passwd et shadow
+Commande : ls -l /etc/passwd /etc/shadow
+
+/etc/passwd possède les permissions -rw-r--r--.
+/etc/shadow possède les permissions -rw-r-----.
+Le fichier passwd contient les informations des comptes utilisateurs, tandis que shadow contient les empreintes des mots de passe. Le fichier shadow est plus protégé pour empêcher l’accès aux informations sensibles.
+
+6. Nom d’hôte
+Commande : cat /etc/hostname
+
+Le nom d’hôte de la machine est srv-abouservices.
+
+7. Configuration DNS
+Commande : cat /etc/resolv.conf
+
+/etc/resolv.conf est un lien symbolique qui pointe vers ../run/systemd/resolve/stub-resolv.conf. Le serveur DNS indiqué est 127.0.0.53.
+
+8. Configuration Netplan
+Commande : ls /etc/netplan
+
+La configuration réseau Netplan se trouve dans /etc/netplan/00-installer-config.yaml.
+
+9. Noyau et initramfs
+Commande : ls /boot
+
+Le noyau utilisé est vmlinuz-7.0.0-30-generic et l’initramfs est initrd.img-7.0.0-30-generic.
+
+10. Systèmes de fichiers /run et /proc
+Commande : df -h /run /proc
+
+/run est monté en tmpfs.
+/proc est monté en proc.
+/proc n’occupe pas d’espace réel sur le disque comme un système de fichiers classique.
+11. Emplacement de la commande ls
+Commandes :
+
+ls -l /bin
+readlink -f $(which ls)
+/bin est un lien symbolique vers usr/bin. La commande ls se trouve réellement dans ../lib/cargo/bin/coreutils/ls selon le lien observé.
+
+12. Processus numéro 1
+Commande : sudo readlink -f /proc/1/exe
+
+Le processus numéro 1 est systemd. Son exécutable se trouve à /usr/lib/systemd/systemd.
+
+Étape 2 — Liens physiques et liens symboliques
+1. Création du dossier et du fichier original
+Nous avons créé le dossier liens dans notre dossier personnel, puis le fichier original.txt contenant le texte « AbouServices ».
+
+2. Création des liens
+ln original.txt physique.txt : crée un lien physique.
+ln -s original.txt symbolique.txt : crée un lien symbolique.
+3. Observation des inodes
+Commande : ls -li
+
+original.txt et physique.txt ont le même inode : 543976.
+symbolique.txt possède un inode différent : 543977.
+Le lien physique partage le même inode que le fichier original, tandis que le lien symbolique possède son propre inode.
+
+4. Vérification avec stat
+Commande : stat original.txt
+
+Taille : 13 octets.
+Inode : 543976.
+Nombre de liens : 2.
+Permissions : 0664.
+Le nombre de liens égal à 2 confirme que deux noms désignent le même fichier physique.
+
+5. Modification du lien physique
+Commande : echo "ajout" | tee -a physique.txt
+
+Nous avons ajouté le texte « ajout » à physique.txt. En affichant original.txt avec cat original.txt, nous avons constaté que le texte ajouté apparaissait également. Cela montre que les deux noms désignent les mêmes données.
+
+6. Suppression et vérification
+La commande rm original.txt a affiché une erreur indiquant que le fichier n’existait pas au moment de la tentative.
+
+La commande ls -li a ensuite permis de vérifier les fichiers présents. Les commandes cat physique.txt et cat symbolique.txt ont affiché le contenu.
+
+7. Tentatives de création de liens physiques
+ln /etc ~/liens/etc-dur : échec. Linux interdit la création de liens physiques vers les répertoires.
+ln /boot/vmlinuz ~/liens/noyau : échec avec le message « Invalid cross-device link ». Le fichier source et la destination se trouvent sur des systèmes de fichiers différents.
+Conclusion
+Un lien physique partage le même inode et les mêmes données que le fichier original. Un lien symbolique possède son propre inode et référence le chemin du fichier. Linux limite les liens physiques vers les répertoires et entre différents systèmes de fichiers.
+
+Étape 3 — Inventaire de sécurité avec find
+1. Recherche des fichiers possédant le bit SUID
+Commande utilisée :
+
+sudo find / -type f -perm -4000
+
+Cette commande permet de rechercher les fichiers possédant le bit SUID. Celui-ci permet à un programme de s’exécuter avec les privilèges du propriétaire du fichier, souvent root.
+
+2. Recherche des fichiers possédant le bit SGID
+Commande utilisée :
+
+sudo find / -type f -perm -2000
+
+Cette commande permet de rechercher les fichiers possédant le bit SGID. Ce bit permet à un programme de s’exécuter avec les privilèges du groupe propriétaire du fichier.
+
+3. Recherche des fichiers accessibles en écriture à tous les utilisateurs
+Commande utilisée :
+
+sudo find / -type f -perm -0002
+
+Cette commande permet de rechercher les fichiers modifiables par tous les utilisateurs. Ces fichiers peuvent représenter un risque de sécurité s’ils sont mal protégés ou mal utilisés.
+
+4. Recherche des répertoires accessibles en écriture à tous les utilisateurs
+Commande utilisée :
+
+sudo find / -type d -perm -0002
+
+Cette commande permet de rechercher les répertoires accessibles en écriture à tous les utilisateurs. Nous avons notamment repéré /tmp, /var/tmp, /dev/shm et d’autres répertoires temporaires.
+
+Ces répertoires sont normalement accessibles en écriture à tous les utilisateurs pour permettre le fonctionnement du système et des applications, mais leur utilisation doit être surveillée.
+
